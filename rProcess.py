@@ -21,7 +21,6 @@ import os
 import sys
 import re
 import shutil
-import time
 import logging
 import traceback
 import ConfigParser
@@ -29,8 +28,9 @@ from base64 import b16encode, b32decode
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'libs'))
 
+from rprocess.helpers.variable import link, symlink, is_rarfile
+
 from libs import requests
-from rprocess.helpers.variable import link, symlink
 from libs.unrar2 import RarFile
 
 ver = 0.3
@@ -49,21 +49,18 @@ class rProcess(object):
                             "compressed")).split('|'))
         ignore_words = (config.get("Miscellaneous", "ignore")).split('|')
 
-        # TODO: get first archive from rar header instead
-        rar_search = '(?P<file>^(?P<base>(?:(?!\.part\d+\.rar$).)*)\.(?:(?:part0*1\.)?rar)$)'
-
         media_files = []
         extracted_files = []
 
+        # Sort files into lists depending on file extension
         for f in files:
             if not any(word in f for word in ignore_words):
                 if f.endswith(media_ext):
                     media_files.append(f)
 
                 elif f.endswith(archive_ext):
-                    if 'part' in f:
-                        if re.search(rar_search, f):
-                            extracted_files.append(f)
+                    if f.endswith('.rar') and is_rarfile(f):  # This will ignore rar sets where all (rar) files end with .rar
+                        extracted_files.append(f)
                     else:
                         extracted_files.append(f)
 
@@ -96,10 +93,12 @@ class rProcess(object):
     def extract_file(self, source_file, destination):
         try:
             rar_handle = RarFile(source_file)
-            for info in rar_handle.infolist():
-                if not info.isdir:
-                    logger.info(loggerHeader + "Extracting file: %s to: %s", info.filename, destination)
-                    rar_handle.extract(condition=[info.index], path=destination, withSubpath=False, overwrite=False)
+            for rar_file in rar_handle.infolist():
+                sub_path = os.path.join(destination, rar_file.filename)
+                if rar_file.isdir and not os.path.exists(sub_path):
+                    os.makedirs(sub_path)
+                else:
+                    rar_handle.extract(condition=[rar_file.index], path=destination, withSubpath=True, overwrite=False)
             del rar_handle
             return True
 
@@ -121,71 +120,79 @@ class rProcess(object):
                     raise
                 pass
 
-    def process_media(self, media_processor, destination):
-        if media_processor == "couchpotato":
-            try:
-                baseURL = config.get("Couchpotato", "baseURL")
-                if not baseURL == '':
-                    logger.debug(loggerHeader + "process_media :: URL base: %s", baseURL)
-            except ConfigParser.NoOptionError:
-                baseURL = ''
+    def process_media(self, post_proc, destination):
 
-            if config.getboolean("Couchpotato", "ssl"):
-                protocol = "https://"
-            else:
-                protocol = "http://"
-            url = protocol + config.get("Couchpotato", "host") + ":" + config.get("Couchpotato", "port") + "/" + baseURL + "api/" + config.get("Couchpotato", "apikey") + "/renamer.scan/?async=1&movie_folder=" + destination
-            user = config.get("Couchpotato", "username")
-            password = config.get("Couchpotato", "password")
+        if post_proc == "couchpotato":
+            ssl = config.getboolean("Couchpotato", "ssl") if config.getboolean("Couchpotato", "ssl") else False
+            host = config.get("Couchpotato", "host") if config.get("Couchpotato", "host") else 'localhost'
+            port = config.get("Couchpotato", "port") if config.get("Couchpotato", "port") else 5050
+            base_url = config.get("Couchpotato", "base_url") if config.get("Couchpotato", "baseURL") else ''
+            api_key = config.get("Couchpotato", "apikey")
+            api_call = "/renamer.scan/?async=1&movie_folder="
 
-        elif media_processor == "sickbeard":
-            try:
-                baseURL = config.get("Sickbeard", "baseURL")
-                if not baseURL == '':
-                    logger.debug(loggerHeader + "process_media :: URL base: %s ", baseURL)
-            except ConfigParser.NoOptionError:
-                baseURL = ''
+            user = config.get("Couchpotato", "username") if config.get("Couchpotato", "username") else ''
+            password = config.get("Couchpotato", "password") if config.get("Couchpotato", "username") else ''
 
-            if config.getboolean("Sickbeard", "ssl"):
-                protocol = "https://"
-            else:
-                protocol = "http://"
-            url = protocol + config.get("Sickbeard", "host") + ":" + config.get("Sickbeard", "port") + "/" + baseURL + "home/postprocess/processEpisode?quiet=1&dir=" + destination
-            user = config.get("Sickbeard", "username")
-            password = config.get("Sickbeard", "password")
+        elif post_proc == "sickbeard":
+            ssl = config.getboolean("Sickbeard", "ssl") if config.getboolean("Sickbeard", "ssl") else False
+            host = config.get("Sickbeard", "host") if config.get("Sickbeard", "port") else 'localhost'
+            port = config.get("Sickbeard", "port") if config.get("Sickbeard", "port") else 8081
+            base_url = config.get("Sickbeard", "base_url") if config.get("Sickbeard", "baseURL") else ''
+            api_key = config.get("Sickbeard", "apikey")
+            api_call = "/home/postprocess/processEpisode?quiet=1&dir="
+
+            user = config.get("Sickbeard", "username") if config.get("Sickbeard", "username") else ''
+            password = config.get("Sickbeard", "password") if config.get("Sickbeard", "password") else ''
+
         else:
             return
 
+        if not host.endswith(':'):
+            host += ':'
+
+        if not port.endswith('/'):
+            port += '/'
+
+        if base_url:
+            if base_url.startswith('/'):
+                base_url.replace('/', '')
+            if not base_url.endswith('/'):
+                base_url += '/'
+
+        if ssl:
+            protocol = "https://"
+        else:
+            protocol = "http://"
+
+        if api_key:
+            url = protocol + host + port + base_url + "api/" + api_key + api_call + destination
+        else:
+            url = protocol + host + port + base_url + api_call + destination
+
         try:
             r = requests.get(url, auth=(user, password))
-            logger.debug(loggerHeader + "Postprocessing with %s :: Opening URL: %s", media_processor, url)
+            logger.debug(loggerHeader + "Postprocessing with %s :: Opening URL: %s", post_proc, url)
         except Exception, e:
-            logger.error(loggerHeader + "Tried postprocessing with %s :: Unable to open URL: %s %s %s", (media_processor, url, e, traceback.format_exc()))
+            logger.error(loggerHeader + "Tried postprocessing with %s :: Unable to open URL: %s %s %s",
+                         (post_proc, url, e, traceback.format_exc()))
             raise
 
         text = r.text
         logger.debug(loggerHeader + "Requests for PostProcessing returned :: %s" + text)
 
-        # This is a ugly solution, we need a better one!!
-        timeout = time.time() + 60 * 2  # 2 min time out
-        while os.path.exists(destination):
-            if time.time() > timeout:
-                logger.debug(
-                    loggerHeader + "process_media :: The destination directory hasn't been deleted after 2 minutes, something is wrong")
-                break
-            time.sleep(2)
 
     def main(self, torrent_hash):
         output_dir = config.get("General", "outputDirectory")
         file_action = config.get("General", "fileAction")
         delete_finished = config.getboolean("General", "deleteFinished")
         append_label = config.getboolean("General", "appendLabel")
-        ignore_label = (config.get("General", "ignoreLabel")).split('|')
+        ignore_label = (config.get("General", "ignoreLabel")).split('|') if (config.get("General", "ignoreLabel")) else ''
         client_name = config.get("Client", "client")
-        cp_active = config.getboolean("CouchPotato", "active")
-        sb_active = config.getboolean("Sickbeard", "active")
-        cp_label = config.get("CouchPotato", "CPLabel")
-        sb_label = config.get("Sickbeard", "SBLabel")
+
+        couchpotato = config.getboolean("CouchPotato", "active")
+        couch_label = config.get("CouchPotato", "label")
+        sickbeard = config.getboolean("Sickbeard", "active")
+        sick_label = config.get("Sickbeard", "label")
 
         # TODO: fix this.. ugly!
         if client_name == 'rtorrent':
@@ -229,53 +236,55 @@ class rProcess(object):
 
                 media_files, extract_files = self.filter_files(torrent_info['files'])
 
-                if (file_action == "move" or file_action == "link") and not extract_files:  # This stopping action needs to be told to exclude when it is an archive file
+                # In some cases uTorrent will do a file lock, to circumvent (and allow post processing) we need
+                # to stop the torrent while working with files associated with the torrent
+                if file_action == "move" or file_action == "link":
                     client.stop_torrent(torrent_hash)
                     logger.debug(loggerHeader + "Stopping seeding torrent with hash: %s", torrent_hash)
 
-                for f in media_files:  # copy/link/move files
+                # Loop through media_files and copy/link/move files
+                for f in media_files:
                     file_name = os.path.split(f)[1]
                     if self.process_file(f, destination, file_action):
                         logger.info(loggerHeader + "Successfully performed %s on %s", file_action, file_name)
                     else:
                         logger.error(loggerHeader + "Failed to perform %s on %s", file_action, file_name)
 
-                for f in extract_files:  # extract files
+                # Loop through extract_files and extract all files
+                for f in extract_files:
                     file_name = os.path.split(f)[1]
                     if self.extract_file(f, destination):
                         logger.info(loggerHeader + "Successfully extracted: %s", file_name)
                     else:
                         logger.error(loggerHeader + "Failed to extract: %s", file_name)
 
-                if cp_active and any(word in torrent_info['label'] for word in cp_label):  # call CP postprocess
-                    logger.debug(loggerHeader + "Couchpotato PostProcessing variables met.")
+                # If label in torrent client matches CouchPotato label set in config call CouchPotato/Sick-Beard
+                # to do additional post processing (eg. renaming etc.)
+                if couchpotato and any(word in torrent_info['label'] for word in couch_label):  # call CP postprocess
+                    logger.debug(loggerHeader + "Calling CouchPotato to post-process: %s", torrent_info['name'])
                     self.process_media("couchpotato", destination)
 
-                elif sb_active and any(word in torrent_info['label'] for word in sb_label):  # call SB postprocess
-                    logger.debug(loggerHeader + "Sickbeard PostProcessing variables met.")
+                elif sickbeard and any(word in torrent_info['label'] for word in sick_label):  # call SB postprocess
+                    logger.debug(loggerHeader + "Calling Sick-Beard to post-process: %s", torrent_info['name'])
                     self.process_media("sickbeard", destination)
 
                 else:
                     logger.debug(loggerHeader + "PostProcessor call params not met.")
 
-#   Delete needs to occur ONLY when the file action is move, and exclude when the files are archive
-                if file_action == "move" and not extract_files:
+                # Delete the torrent (wand associated files) if its enabled in config.
+                # Note that it will also delete torrent/files where file action is set to move as there wouldn't be any
+                # files to seed when they've been successfully moved.
+                if delete_finished or file_action == "move":
                     deleted_files = client.delete_torrent(torrent)
                     logger.info(loggerHeader + "Removing torrent with hash: %s", torrent_hash)
                     for f in deleted_files:
                         logger.info(loggerHeader + "Removed: %s", f)
 
-#   Start needs to occur ONLY when the file action is link, and exclude when the files are archive
-                elif file_action == "link" and not extract_files:
-                # it would be best if rProcess checked to see if the post-processing completed successfully first - how?
+                # Start the torrent again to continue seeding
+                if file_action == "link":
+                    # TODO: it would be best if rProcess checked to see if the post-processing completed successfully first - how?
                     client.start_torrent(torrent_hash)
                     logger.debug(loggerHeader + "Starting seeding torrent with hash: %s", torrent_hash)
-
-                if delete_finished and file_action != "move":
-                    deleted_files = client.delete_torrent(torrent)
-                    logger.info(loggerHeader + "Removing torrent with hash: %s", torrent_hash)
-                    for f in deleted_files:
-                        logger.info(loggerHeader + "Removed: %s", f)
 
                 logger.info(loggerHeader + "We're all done here!")
 
