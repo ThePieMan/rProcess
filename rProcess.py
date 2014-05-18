@@ -122,7 +122,7 @@ class rProcess(object):
     def process_media(self, post_proc, destination):
 
         if post_proc == "couchpotato":
-            ssl = config.getboolean("CouchPotato", "ssl") if config.get("CouchPotato", "ssl") else False
+            ssl = config.getboolean("CouchPotato", "ssl") if config.getboolean("CouchPotato", "ssl") else False
             host = config.get("CouchPotato", "host") if config.get("CouchPotato", "host") else 'localhost'
             port = config.get("CouchPotato", "port") if config.get("CouchPotato", "port") else 5050
             base_url = config.get("CouchPotato", "base_url") if config.get("CouchPotato", "base_url") else ''
@@ -133,7 +133,7 @@ class rProcess(object):
             password = config.get("CouchPotato", "password") if config.get("CouchPotato", "username") else ''
 
         elif post_proc == "sickbeard":
-            ssl = config.getboolean("Sickbeard", "ssl") if config.get("Sickbeard", "ssl") else False
+            ssl = config.getboolean("Sickbeard", "ssl") if config.getboolean("Sickbeard", "ssl") else False
             host = config.get("Sickbeard", "host") if config.get("Sickbeard", "host") else 'localhost'
             port = config.get("Sickbeard", "port") if config.get("Sickbeard", "port") else 8081
             base_url = config.get("Sickbeard", "base_url") if config.get("Sickbeard", "base_url") else ''
