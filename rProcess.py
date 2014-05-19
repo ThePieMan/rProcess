@@ -19,7 +19,6 @@
 
 import os
 import sys
-import re
 import shutil
 import logging
 import traceback
@@ -127,19 +126,18 @@ class rProcess(object):
             host = config.get("CouchPotato", "host") if config.get("CouchPotato", "host") else 'localhost'
             port = config.get("CouchPotato", "port") if config.get("CouchPotato", "port") else 5050
             base_url = config.get("CouchPotato", "base_url") if config.get("CouchPotato", "base_url") else ''
-            api_key = config.get("CouchPotato", "apikey")
-            api_call = "/renamer.scan/?async=1&movie_folder="
+            api_key = config.get("CouchPotato", "apikey") if config.get("CouchPotato", "apikey") else False
+            api_call = "renamer.scan/?async=1&movie_folder="
 
             user = config.get("CouchPotato", "username") if config.get("CouchPotato", "username") else ''
             password = config.get("CouchPotato", "password") if config.get("CouchPotato", "username") else ''
 
         elif post_proc == "sickbeard":
             ssl = config.getboolean("Sickbeard", "ssl") if config.getboolean("Sickbeard", "ssl") else False
-            host = config.get("Sickbeard", "host") if config.get("Sickbeard", "port") else 'localhost'
+            host = config.get("Sickbeard", "host") if config.get("Sickbeard", "host") else 'localhost'
             port = config.get("Sickbeard", "port") if config.get("Sickbeard", "port") else 8081
-            base_url = config.get("Sickbeard", "base_url") if config.get("Sickbeard", "baseURL") else ''
-            api_key = config.get("Sickbeard", "apikey")
-            api_call = "/home/postprocess/processEpisode?quiet=1&dir="
+            base_url = config.get("Sickbeard", "base_url") if config.get("Sickbeard", "base_url") else ''
+            api_call = "home/postprocess/processEpisode?quiet=1&dir="
 
             user = config.get("Sickbeard", "username") if config.get("Sickbeard", "username") else ''
             password = config.get("Sickbeard", "password") if config.get("Sickbeard", "password") else ''
@@ -164,22 +162,29 @@ class rProcess(object):
         else:
             protocol = "http://"
 
-        if api_key:
-            url = protocol + host + port + base_url + "api/" + api_key + api_call + destination
-        else:
-            url = protocol + host + port + base_url + api_call + destination
+        if post_proc == "couchpotato":
+            if api_key:
+                url = protocol + host + port + base_url + "api/" + api_key + api_call + destination
+                logger.debug(loggerHeader + "URL: %s", url)
+                r = requests.get(url)
+                logger.info(loggerHeader + "Postprocessing with %s :: Opening URL: %s", post_proc, url)
+            else:
+                url = protocol + host + port + base_url + api_call + destination
+                logger.debug(loggerHeader + "URL: %s", url)
+                r = requests.get(url, auth=(user, password))
+                logger.info(loggerHeader + "Postprocessing with %s :: Opening URL: %s", post_proc, url)
 
-        try:
+        elif post_proc == "sickbeard":
+            url = protocol + host + port + base_url + api_call + destination
+            logger.debug(loggerHeader + "URL: %s", url)
             r = requests.get(url, auth=(user, password))
-            logger.debug(loggerHeader + "Postprocessing with %s :: Opening URL: %s", post_proc, url)
-        except Exception, e:
-            logger.error(loggerHeader + "Tried postprocessing with %s :: Unable to open URL: %s %s %s",
-                         (post_proc, url, e, traceback.format_exc()))
-            raise
+            logger.info(loggerHeader + "Postprocessing with %s :: Opening URL: %s", post_proc, url)
+
+        else:
+            return
 
         text = r.text
         logger.debug(loggerHeader + "Requests for PostProcessing returned :: %s" + text)
-
 
     def main(self, torrent_hash):
         output_dir = config.get("General", "outputDirectory")
@@ -188,11 +193,10 @@ class rProcess(object):
         append_label = config.getboolean("General", "appendLabel")
         ignore_label = (config.get("General", "ignoreLabel")).split('|') if (config.get("General", "ignoreLabel")) else ''
         client_name = config.get("Client", "client")
-
-        couchpotato = config.getboolean("CouchPotato", "active")
-        couch_label = config.get("CouchPotato", "label")
-        sickbeard = config.getboolean("Sickbeard", "active")
-        sick_label = config.get("Sickbeard", "label")
+        cp_active = config.getboolean("CouchPotato", "active")
+        cp_label = config.get("CouchPotato", "label")
+        sb_active = config.getboolean("Sickbeard", "active")
+        sb_label = config.get("Sickbeard", "label")
 
         # TODO: fix this.. ugly!
         if client_name == 'rtorrent':
@@ -224,7 +228,7 @@ class rProcess(object):
                 logger.debug(loggerHeader + "Hash: %s", torrent_info['hash'])
                 if torrent_info['label']:
                     logger.info(loggerHeader + "Torrent Label: %s", torrent_info['label'])
-
+                    
                 if any(word in torrent_info['label'] for word in ignore_label):
                     logger.error(loggerHeader + "Exiting: Found unwanted label: %s", torrent_info['label'])
                     sys.exit(-1)
@@ -260,18 +264,16 @@ class rProcess(object):
 
                 # If label in torrent client matches CouchPotato label set in config call CouchPotato/Sick-Beard
                 # to do additional post processing (eg. renaming etc.)
-                if couchpotato and any(word in torrent_info['label'] for word in couch_label):  # call CP postprocess
+                if cp_active and (torrent_info['label'] == cp_label):
                     logger.debug(loggerHeader + "Calling CouchPotato to post-process: %s", torrent_info['name'])
                     self.process_media("couchpotato", destination)
-
-                elif sickbeard and any(word in torrent_info['label'] for word in sick_label):  # call SB postprocess
-                    logger.debug(loggerHeader + "Calling Sick-Beard to post-process: %s", torrent_info['name'])
+                elif sb_active and (torrent_info['label'] == sb_label):
+                    logger.debug(loggerHeader + "Calling Sickbeard to post-process: %s", torrent_info['name'])
                     self.process_media("sickbeard", destination)
-
                 else:
                     logger.debug(loggerHeader + "PostProcessor call params not met.")
 
-                # Delete the torrent (wand associated files) if its enabled in config.
+                # Delete the torrent (and associated files) if its enabled in config.
                 # Note that it will also delete torrent/files where file action is set to move as there wouldn't be any
                 # files to seed when they've been successfully moved.
                 if delete_finished or file_action == "move":
