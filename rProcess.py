@@ -193,7 +193,6 @@ class rProcess(object):
         append_label = config.getboolean("General", "appendLabel")
         ignore_label = (config.get("General", "ignoreLabel")).split('|') if (config.get("General", "ignoreLabel")) else ''
         client_name = config.get("Client", "client")
-
         cp_active = config.getboolean("CouchPotato", "active")
         cp_label = config.get("CouchPotato", "label")
         sb_active = config.getboolean("Sickbeard", "active")
@@ -229,7 +228,7 @@ class rProcess(object):
                 logger.debug(loggerHeader + "Hash: %s", torrent_info['hash'])
                 if torrent_info['label']:
                     logger.info(loggerHeader + "Torrent Label: %s", torrent_info['label'])
-
+                    
                 if any(word in torrent_info['label'] for word in ignore_label):
                     logger.error(loggerHeader + "Exiting: Found unwanted label: %s", torrent_info['label'])
                     sys.exit(-1)
@@ -265,14 +264,12 @@ class rProcess(object):
 
                 # If label in torrent client matches CouchPotato label set in config call CouchPotato/Sick-Beard
                 # to do additional post processing (eg. renaming etc.)
-                if cp_active and any(word in torrent_info['label'] for word in cp_label):  # call CP postprocess
+                if cp_active and (torrent_info['label'] == cp_label):
                     logger.debug(loggerHeader + "Calling CouchPotato to post-process: %s", torrent_info['name'])
                     self.process_media("couchpotato", destination)
-
-                elif sb_active and any(word in torrent_info['label'] for word in sb_label):  # call SB postprocess
+                elif sb_active and (torrent_info['label'] == sb_label):
                     logger.debug(loggerHeader + "Calling Sickbeard to post-process: %s", torrent_info['name'])
                     self.process_media("sickbeard", destination)
-
                 else:
                     logger.debug(loggerHeader + "PostProcessor call params not met.")
 
