@@ -243,7 +243,7 @@ class rProcess(object):
                 # In some cases uTorrent will do a file lock, to circumvent (and allow post processing) we need
                 # to stop the torrent while working with files associated with the torrent
                 if file_action == "move" or file_action == "link":
-                    client.stop_torrent(torrent)
+                    client.stop_torrent(torrent_hash)
                     logger.debug(loggerHeader + "Stopping seeding torrent with hash: %s", torrent_hash)
 
                 # Loop through media_files and copy/link/move files
@@ -285,7 +285,7 @@ class rProcess(object):
                 # Start the torrent again to continue seeding
                 if file_action == "link":
                     # TODO: it would be best if rProcess checked to see if the post-processing completed successfully first - how?
-                    client.start_torrent(torrent)
+                    client.start_torrent(torrent_hash)
                     logger.debug(loggerHeader + "Starting seeding torrent with hash: %s", torrent_hash)
 
                 logger.info(loggerHeader + "We're all done here!")
