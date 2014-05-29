@@ -127,7 +127,7 @@ class rProcess(object):
             port = config.get("CouchPotato", "port") if config.get("CouchPotato", "port") else 5050
             base_url = config.get("CouchPotato", "base_url") if config.get("CouchPotato", "base_url") else ''
             api_key = config.get("CouchPotato", "apikey") if config.get("CouchPotato", "apikey") else False
-            api_call = "renamer.scan/?async=1&movie_folder="
+            api_call = "/renamer.scan/?async=1&movie_folder="
 
             user = config.get("CouchPotato", "username") if config.get("CouchPotato", "username") else ''
             password = config.get("CouchPotato", "password") if config.get("CouchPotato", "username") else ''
