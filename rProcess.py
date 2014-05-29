@@ -19,6 +19,7 @@
 
 import os
 import sys
+import time
 import shutil
 import logging
 import traceback
@@ -183,8 +184,12 @@ class rProcess(object):
         else:
             return
 
+        # Sleep for 30 seconds to allow post-processors to complete.
+        # This is a dirty hackneyed thing to do, and needs better treatment.
+        time.sleep(30)
         text = r.text
         logger.debug(loggerHeader + "Requests for PostProcessing returned :: %s" + text)
+        
 
     def main(self, torrent_hash):
         output_dir = config.get("General", "outputDirectory")
@@ -272,7 +277,7 @@ class rProcess(object):
                     self.process_media("sickbeard", destination)
                 else:
                     logger.debug(loggerHeader + "PostProcessor call params not met.")
-
+                    
                 # Delete the torrent (and associated files) if its enabled in config.
                 # Note that it will also delete torrent/files where file action is set to move as there wouldn't be any
                 # files to seed when they've been successfully moved.
