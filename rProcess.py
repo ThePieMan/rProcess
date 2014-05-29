@@ -277,7 +277,7 @@ class rProcess(object):
                     self.process_media("sickbeard", destination)
                 else:
                     logger.debug(loggerHeader + "PostProcessor call params not met.")
-                    
+
                 # Delete the torrent (and associated files) if its enabled in config.
                 # Note that it will also delete torrent/files where file action is set to move as there wouldn't be any
                 # files to seed when they've been successfully moved.
